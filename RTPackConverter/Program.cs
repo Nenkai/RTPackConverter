@@ -233,18 +233,18 @@ namespace RTFONTConverter
             bdr.BaseStream.Seek(24, SeekOrigin.Current);
 
             Log("Converting image to png...");
-            DirectBitmap texture = new DirectBitmap(OriginalWidth, OriginalHeight);
-            for (int y = OriginalHeight - 1; y >= 0; y--)
+            DirectBitmap texture = new DirectBitmap(Width, Height);
+            for (int y = Height - 1; y >= 0; y--)
             {
-                for (int x = 0; x < OriginalWidth; x++)
+                for (int x = 0; x < Width; x++)
                 {
                     if (UsesAlpha)
                     {
-                        texture.Bits[x + y * OriginalWidth] = (bdr.ReadByte() << 16 | bdr.ReadByte() << 8 | bdr.ReadByte() | bdr.ReadByte() << 24);
+                        texture.Bits[x + y * Width] = (bdr.ReadByte() << 16 | bdr.ReadByte() << 8 | bdr.ReadByte() | bdr.ReadByte() << 24);
                     }
                     else
                     {
-                        texture.Bits[x + y * OriginalWidth] = (bdr.ReadByte() << 16 | bdr.ReadByte() << 8 | bdr.ReadByte() | -16777216);
+                        texture.Bits[x + y * Width] = (bdr.ReadByte() << 16 | bdr.ReadByte() << 8 | bdr.ReadByte() | -16777216);
                     }
                 }
 
