@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Threading;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.IO.Compression;
@@ -9,7 +10,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Linq;
 
-namespace RTFONTConverter
+namespace RTPackConverter
 {
     class Program
     {
@@ -100,9 +101,9 @@ namespace RTFONTConverter
 
                 //RTPACK Header (24 bytes)
                 uint compressedSize = br.ReadUInt32();
-                Log($"Compressed Size : {compressedSize}kb");
+                Log($"Compressed Size : {compressedSize}b");
                 uint decompressedSize = br.ReadUInt32();
-                Log($"Decompressed Size : {decompressedSize}kb");
+                Log($"Decompressed Size : {decompressedSize}b");
 
                 eCompressionType compressionType = (eCompressionType)br.ReadByte();
                 Log($"Compression Type : {compressionType}");
@@ -123,6 +124,16 @@ namespace RTFONTConverter
                             zs.CopyTo(ms);
                         }
                         ms.Position = 0;
+
+                        //Decompress and save file
+#if DEBUG
+                        using (FileStream file = new FileStream(Path.GetFileNameWithoutExtension(filename) + ".rtpack", FileMode.Create))
+                        {
+                            ms.CopyTo(file);
+                            ms.Position = 0;
+                        }
+#endif
+
                     }
                     else
                     {
@@ -165,10 +176,9 @@ namespace RTFONTConverter
             short blankCharWidth = bdr.ReadInt16();
             short fontStateCount = bdr.ReadInt16();
             short kerningPairCount = bdr.ReadInt16();
-
             bdr.BaseStream.Seek(124, SeekOrigin.Current); //Reserved
 
-            //Character definitions
+            //Character definitions (not really used for anything here)
             for (int i = 0; i < lastChar - 1; i++)
             {
                 short bmpPosX = bdr.ReadInt16();
@@ -185,22 +195,25 @@ namespace RTFONTConverter
             }
 
             //No other choice to do that, wasn't able to successfully find out where it ends
-            bdr.BaseStream.Seek(27, SeekOrigin.Current);
+            //But we don't use that data yet so...
+            bdr.BaseStream.Seek(28, SeekOrigin.Current);
 
             //Font color definitions
+            List<FontState> fontStates = new List<FontState>();
+            Log("Getting font states...");
             for (int i = 0; i < fontStateCount; i++)
             {
-                byte a = bdr.ReadByte();
-                byte r = bdr.ReadByte();
-                byte g = bdr.ReadByte();
-                byte b = bdr.ReadByte();
+                FontState state = new FontState();
+                state.Color = Color.FromArgb((bdr.ReadByte() << 16 | bdr.ReadByte() << 8 | bdr.ReadByte() | bdr.ReadByte() << 24));
                 byte[] charRaw = { bdr.ReadByte() };
-                string charTrigger = Encoding.ASCII.GetString(charRaw);
+                state.CharTrigger = Encoding.ASCII.GetString(charRaw)[0];
+                fontStates.Add(state);
                 bdr.BaseStream.Seek(3, SeekOrigin.Current); //blank reserved
+                Log($"{state.CharTrigger}|A:{state.Color.A},R:{state.Color.R},G:{state.Color.G},B:{state.Color.B}");
             }
 
             //Skip the magic and prepare
-            bdr.BaseStream.Seek(7, SeekOrigin.Current);
+            bdr.BaseStream.Seek(6, SeekOrigin.Current);
 
             //RTTEX Image begins here (magic and others) so we convert it the regular way
             return HandleRTTEX(bdr);
@@ -212,16 +225,28 @@ namespace RTFONTConverter
 
             //RTTEXHeader
             Log("Reading image data...");
+
             int Height = bdr.ReadInt32();
             int Width = bdr.ReadInt32();
+
             Log($"-> Size {Height}x{Width}");
-            int Format = bdr.ReadInt32();
+            GL_FORMATS Format = (GL_FORMATS)bdr.ReadInt32();
+
+            Log($"-> Format {Format}");
+            //Support for other types could be added, we only use the mainstream one for now
+            if (Format != GL_FORMATS.OGL_RGBA_8888)
+            {
+                throw new NotImplementedException("Only OGL_RGBA_8888 (4 bytes per pixel) formats are supported yet.");
+            }
+
             int OriginalHeight = bdr.ReadInt32();
             int OriginalWidth = bdr.ReadInt32();
             Log($"-> Original Size {OriginalHeight}x{OriginalWidth}");
+
             bool UsesAlpha = bdr.ReadByte() == 1;
             bool IsCompressed = bdr.ReadByte() == 1;
             Log($"-> Alpha? {UsesAlpha} - Compressed? {IsCompressed}");
+
             short ReservedFlags = bdr.ReadInt16();
             int MipmapCount = bdr.ReadInt32();
             int[] rttex_reserved = new int[16];
@@ -249,6 +274,7 @@ namespace RTFONTConverter
                 }
 
             }
+            bdr.Dispose();
             return texture;
         }
 
@@ -257,33 +283,26 @@ namespace RTFONTConverter
             C_COMPRESSION_NONE = 0,
             C_COMPRESSION_ZLIB = 1
         };
+
+        public struct FontState
+        {
+            public Color Color { get; set; }
+            public char CharTrigger { get; set; }
+        }
+
+        enum GL_FORMATS
+        {
+            OGL_PVRTC2 = 0x8C00,
+            OGL_PVRTC2_2 = 0x8C01,
+            OGL_PVRTC4 = 0x8C02,
+            OGL_PVRTC4_2 = 0x8C03,
+            OGL_RGBA_4444 = 0x8033,
+
+            OGL_RGBA_8888 = 0x1401,
+            OGL_RGB_565 = 0x8363
+        }
     }
 }
 
-public class DirectBitmap : IDisposable
-{
-    public Bitmap Bitmap { get; private set; }
-    public Int32[] Bits { get; private set; }
-    public bool Disposed { get; private set; }
-    public int Height { get; private set; }
-    public int Width { get; private set; }
 
-    protected GCHandle BitsHandle { get; private set; }
 
-    public DirectBitmap(int width, int height)
-    {
-        Width = width;
-        Height = height;
-        Bits = new Int32[width * height];
-        BitsHandle = GCHandle.Alloc(Bits, GCHandleType.Pinned);
-        Bitmap = new Bitmap(width, height, width * 4, PixelFormat.Format32bppArgb, BitsHandle.AddrOfPinnedObject());
-    }
-
-    public void Dispose()
-    {
-        if (Disposed) return;
-        Disposed = true;
-        Bitmap.Dispose();
-        BitsHandle.Free();
-    }
-}
