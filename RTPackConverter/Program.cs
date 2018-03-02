@@ -10,20 +10,23 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Linq;
 
+using Console = Colorful.Console;
+
 namespace RTPackConverter
 {
     class Program
     {
         static bool isBatchConvert = false;
         static int processedFiles = 0;
+        static string currentFileName;
 
         static void Main(string[] args)
         {
-            Console.WriteLine("========= RTPack Converter =========");
+            Console.WriteLine("================ RTPack Converter =================", Color.White);
             if (args.Length == 0)
             {
-                Console.WriteLine("Drop a RTPACK File (rtfont/rttex) or a folder into this executable to convert it.");
-                Console.WriteLine("(Press any key to exit...)");
+                Console.WriteLine("Drop a RTPACK File (rtfont/rttex) or a folder into this executable to convert it.", Color.OrangeRed);
+                Console.WriteLine("(Press any key to exit...)", Color.OrangeRed);
                 Console.ReadKey();
                 return;
             }
@@ -40,36 +43,40 @@ namespace RTPackConverter
                     if (files.Length > 1) isBatchConvert = true;
                     foreach (string f in files)
                     {
+                        currentFileName = Path.GetFileName(f);
                         try
                         {
                             ConvertRTPACKFile(f);
-                            Console.WriteLine($@"Converted {Path.GetFileNameWithoutExtension(f)} to png.");
+                            Console.WriteLine($@"Converted {currentFileName} to png.", Color.LightGreen);
                             processedFiles++;
                         }
                         catch (Exception e)
                         {
-                            Console.WriteLine($@"[!] Could not convert {Path.GetFileNameWithoutExtension(f)}");
+                            Console.WriteLine($@"[!] Could not convert {currentFileName}", Color.OrangeRed);
+                            continue;
                         }
                     }
                 }
                 else
                 {
                     if (args.Length > 1) isBatchConvert = true;
+                    currentFileName = Path.GetFileName(i);
                     try
                     {
                         ConvertRTPACKFile(i);
-                        Console.WriteLine("Converted " + Path.GetFileName(i) + " to png.");
+                        Console.WriteLine("Converted " + currentFileName + " to png.", Color.LightGreen);
                         processedFiles++;
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine($@"[!] Could not convert {Path.GetFileNameWithoutExtension(i)}");
+                        Console.WriteLine($@"[!] Could not convert {currentFileName}", Color.OrangeRed);
+                        continue;
                     }
                 }
             }
             sw.Stop();
-            Console.WriteLine($"Done. Processed {processedFiles} files in {sw.Elapsed.Minutes}mins {sw.Elapsed.Seconds}seconds.");
-            Console.WriteLine("(Press any key to exit)");
+            Console.WriteLine($"Done. Processed {processedFiles} files in {sw.Elapsed.Minutes}mins {sw.Elapsed.Seconds}seconds.", Color.Green);
+            Console.WriteLine("\n(Press any key to exit)", Color.Yellow);
             Console.ReadKey();
         }
 
@@ -78,6 +85,14 @@ namespace RTPackConverter
             if (!isBatchConvert)
             {
                 Console.WriteLine(text);
+            }
+        }
+
+        private static void Log(string text, Color color)
+        {
+            if (!isBatchConvert)
+            {
+                Console.WriteLine(text, color);
             }
         }
 
@@ -91,22 +106,22 @@ namespace RTPackConverter
                 string rtpack_magic = new string(br.ReadChars(6));
                 if (!String.Equals(rtpack_magic, "RTPACK"))
                 {
-                    Log("Not a valid rtfont file. Press any key to exit...");
+                    Log("Not a valid rtfont file. Press any key to exit...", Color.OrangeRed);
                     Console.ReadKey();
                     return;
                 }
-                Log("File has valid RTPACK magic.");
+                Log("File has valid RTPACK magic.", Color.LimeGreen);
                 byte version = br.ReadByte();
                 byte reserved = br.ReadByte();
 
                 //RTPACK Header (24 bytes)
                 uint compressedSize = br.ReadUInt32();
-                Log($"Compressed Size : {compressedSize}b");
+                Log($"-> Compressed Size : {BytesToString(compressedSize)}", Color.Orange);
                 uint decompressedSize = br.ReadUInt32();
-                Log($"Decompressed Size : {decompressedSize}b");
+                Log($"-> Decompressed Size : {BytesToString(decompressedSize)}", Color.Orange);
 
                 eCompressionType compressionType = (eCompressionType)br.ReadByte();
-                Log($"Compression Type : {compressionType}");
+                Log($"-> Compression Type : {compressionType}", Color.Orange);
 
                 fs.Seek(15, SeekOrigin.Current);
                 fs.ReadByte();
@@ -117,7 +132,7 @@ namespace RTPackConverter
                 {
                     if (compressionType == eCompressionType.C_COMPRESSION_ZLIB)
                     {
-                        Log("Decompressing..");
+                        Log("Decompressing..", Color.Yellow);
                         using (DeflateStream zs = new DeflateStream(fs, CompressionMode.Decompress))
                         {
 
@@ -148,13 +163,13 @@ namespace RTPackConverter
                     string decomp_magic = new string(bdr.ReadChars(6));
                     if (String.Equals(decomp_magic, "RTTXTR"))
                     {
-                        Log("Texture file detected. (RTTXTR/rttex)");
-                        HandleRTTEX(bdr).Bitmap.Save(Path.GetFileNameWithoutExtension(filename) + ".png");
+                        Log("Texture file detected. (RTTXTR/rttex)", Color.LimeGreen);
+                        HandleRTTEX(bdr).Bitmap.Save($@"{Path.GetDirectoryName(filename)}\{Path.GetFileNameWithoutExtension(filename)}.png");
                     }
                     else if (String.Equals(decomp_magic, "RTFONT"))
                     {
-                        Log("Font detected. (RTFONT/rtfont)");
-                        HandleRTFONT(bdr).Bitmap.Save(Path.GetFileNameWithoutExtension(filename) + ".png");
+                        Log("Font detected. (RTFONT/rtfont)", Color.LimeGreen);
+                        HandleRTFONT(bdr).Bitmap.Save($@"{Path.GetDirectoryName(filename)}\{Path.GetFileNameWithoutExtension(filename)}.png");
                     }
 
                 }
@@ -200,7 +215,7 @@ namespace RTPackConverter
 
             //Font color definitions
             List<FontState> fontStates = new List<FontState>();
-            Log("Getting font states...");
+            Log("Getting font states...", Color.Yellow);
             for (int i = 0; i < fontStateCount; i++)
             {
                 FontState state = new FontState();
@@ -209,7 +224,7 @@ namespace RTPackConverter
                 state.CharTrigger = Encoding.ASCII.GetString(charRaw)[0];
                 fontStates.Add(state);
                 bdr.BaseStream.Seek(3, SeekOrigin.Current); //blank reserved
-                Log($"{state.CharTrigger}|A:{state.Color.A},R:{state.Color.R},G:{state.Color.G},B:{state.Color.B}");
+                Log($"{state.CharTrigger}|A:{state.Color.A},R:{state.Color.R},G:{state.Color.G},B:{state.Color.B}", Color.LightBlue);
             }
 
             //Skip the magic and prepare
@@ -224,15 +239,15 @@ namespace RTPackConverter
             bdr.BaseStream.Seek(2, SeekOrigin.Current);
 
             //RTTEXHeader
-            Log("Reading image data...");
+            Log("Reading image data...", Color.Yellow);
 
             int Height = bdr.ReadInt32();
             int Width = bdr.ReadInt32();
 
-            Log($"-> Size {Height}x{Width}");
+            Log($"-> Size {Height}x{Width}", Color.Orange);
             GL_FORMATS Format = (GL_FORMATS)bdr.ReadInt32();
 
-            Log($"-> Format {Format}");
+            Log($"-> Format {Format}", Color.Orange);
             //Support for other types could be added, we only use the mainstream one for now
             if (Format != GL_FORMATS.OGL_RGBA_8888)
             {
@@ -241,11 +256,11 @@ namespace RTPackConverter
 
             int OriginalHeight = bdr.ReadInt32();
             int OriginalWidth = bdr.ReadInt32();
-            Log($"-> Original Size {OriginalHeight}x{OriginalWidth}");
+            Log($"-> Original Size {OriginalHeight}x{OriginalWidth}", Color.Orange);
 
             bool UsesAlpha = bdr.ReadByte() == 1;
             bool IsCompressed = bdr.ReadByte() == 1;
-            Log($"-> Alpha? {UsesAlpha} - Compressed? {IsCompressed}");
+            Log($"-> Alpha? {UsesAlpha} - Compressed? {IsCompressed}", Color.Orange);
 
             short ReservedFlags = bdr.ReadInt16();
             int MipmapCount = bdr.ReadInt32();
@@ -257,7 +272,7 @@ namespace RTPackConverter
 
             bdr.BaseStream.Seek(24, SeekOrigin.Current);
 
-            Log("Converting image to png...");
+            Log($"{currentFileName} --> {Path.GetFileNameWithoutExtension(currentFileName)}.png", Color.Green);
             DirectBitmap texture = new DirectBitmap(Width, Height);
             for (int y = Height - 1; y >= 0; y--)
             {
@@ -276,6 +291,17 @@ namespace RTPackConverter
             }
             bdr.Dispose();
             return texture;
+        }
+
+        static String BytesToString(long byteCount)
+        {
+            string[] suf = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
+            if (byteCount == 0)
+                return "0" + suf[0];
+            long bytes = Math.Abs(byteCount);
+            int place = Convert.ToInt32(Math.Floor(Math.Log(bytes, 1024)));
+            double num = Math.Round(bytes / Math.Pow(1024, place), 1);
+            return (Math.Sign(byteCount) * num).ToString() + suf[place];
         }
 
         enum eCompressionType
